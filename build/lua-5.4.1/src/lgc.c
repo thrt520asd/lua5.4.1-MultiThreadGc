@@ -1653,6 +1653,94 @@ static void incstep (lua_State *L, global_State *g) {
     luaE_setdebt(g, debt);
   }
 }
+static void HandleGcThreadWork(lua_State* L, global_State* g) {
+    if (g->gcthrea_work > 0) {
+        int stepmul = (getgcparam(g->gcstepmul) | 1);  /* avoid division by 0 */
+        l_mem debt = (g->GCdebt / WORK2MEM) * stepmul;
+        debt -= g->gcthrea_work; /* sub gc thread work */
+        debt = (debt / stepmul) * WORK2MEM;  /* convert 'work units' to bytes */
+        luaE_setdebt(g, debt);
+        g->gcthrea_work = 0;
+    }
+}
+
+
+static void incstep_main_thread(lua_State* L, global_State* g) {
+
+    int stepmul = (getgcparam(g->gcstepmul) | 1);  /* avoid division by 0 */
+    l_mem debt = (g->GCdebt / WORK2MEM) * stepmul;
+    l_mem stepsize = (g->gcstepsize <= log2maxs(l_mem))
+        ? ((cast(l_mem, 1) << g->gcstepsize) / WORK2MEM) * stepmul
+        : MAX_LMEM;  /* overflow; keep maximum value */
+    do {  /* repeat until pause or enough "credit" (negative debt) */
+        lu_mem work = singlestep(L);  /* perform one single step */
+        debt -= work;
+    } while (debt > -stepsize && g->gcstate != GCSpause);
+    if (g->gcstate == GCSpause)
+        setpause(g);  /* pause until next cycle */
+    else {
+        debt = (debt / stepmul) * WORK2MEM;  /* convert 'work units' to bytes */
+        luaE_setdebt(g, debt);
+    }
+}
+
+ void incstep_gc_thread(lua_State* L) {
+     global_State* g = G(L);
+    if (g->gcstate == GCSpropagate) {
+        int stepmul = (getgcparam(g->gcstepmul) | 1);  /* avoid division by 0 */
+        l_mem debt = (g->GCdebt / WORK2MEM) * stepmul;
+        l_mem stepsize = (g->gcstepsize <= log2maxs(l_mem))
+            ? ((cast(l_mem, 1) << g->gcstepsize) / WORK2MEM) * stepmul
+            : MAX_LMEM;  /* overflow; keep maximum value */
+        l_mem allWork = 0;
+        do {  /* repeat until pause or enough "credit" (negative debt) */
+
+            l_mem work = 0;
+            if (g->gray == NULL) {  /* no more gray objects? */
+                break;
+            }
+            else {
+                work = propagatemark(g);  /* traverse one gray object */
+            }
+
+            allWork += work;
+        } while (debt > -stepsize && g->gcstate != GCSpause);
+
+        g->gcthrea_work = allWork;
+        // enter lock
+    }
+    g->lockGcCall(L);
+}
+
+static void incstep_mtv2(lua_State* L, global_State* g) {
+    // 消化gc线程工作量
+    HandleGcThreadWork(L, g);
+
+    if (g->GCdebt < 0) {
+        return;
+    }
+
+    if (g->gcthreaRunning) {
+        return;
+    }
+    switch (g->gcstate)
+    {
+    case GCSpropagate:
+        if (g->gray == NULL) {
+            // enter atomic
+            break;
+        }
+        else {
+            // noticy gc thread
+            g->pulseGcCall(L);
+            return;
+        }
+    default:
+        break;
+    }
+    incstep_main_thread(L, g);
+}
+
 
 /*
 ** performs a basic GC step if collector is running

@@ -139,6 +139,9 @@
     <ClCompile Include="D:\UGit\luaMultiThreadGc\build\i64lib.c" />
     <ClCompile Include="D:\UGit\luaMultiThreadGc\build\xlua.c" />
     <ClCompile Include="D:\UGit\luaMultiThreadGc\build\memory_leak_checker.c" />
+    <ClCompile Include="main.c" />
+    <ClCompile Include="lmtgcV2Define.h" />
+    <ClCompile Include="lmtgcV2.c" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="D:\UGit\luaMultiThreadGc\build\CMakeLists.txt" />

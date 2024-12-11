@@ -12,7 +12,7 @@
 #include "lobject.h"
 #include "ltm.h"
 #include "lzio.h"
-
+#include "lmtgcV2Define.h"
 
 /*
 ** Some notes about garbage-collected objects: All objects in Lua must
@@ -297,6 +297,13 @@ typedef struct global_State {
   lua_WarnFunction warnf;  /* warning function */
   void *ud_warn;         /* auxiliary data to 'warnf' */
   unsigned int Cstacklimit;  /* current limit for the C stack */
+  // multi_thread_gc_v2
+  lu_byte mtgcV2Flag;
+  lu_byte gcthreaRunning;
+  int gcthrea_work;
+  LockGcThreadCall lockGcCall;
+  PulseGcThreadCall pulseGcCall;
+  PlatformWriteBarrier writeBarrierCall;
 } global_State;
 
 
